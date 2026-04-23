@@ -6,10 +6,7 @@ import streamlit as st
 from docx import Document
 from PIL import Image, ImageDraw, ImageFont
 
-# PDF
 import fitz
-
-# Arabic
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -30,8 +27,10 @@ def render_first_page(pdf_bytes: bytes, dpi=300):
 
 def load_template(file, dpi=300):
     data = file.read()
+
     if file.name.lower().endswith(".pdf"):
         return render_first_page(data, dpi=dpi)
+
     return Image.open(io.BytesIO(data)).convert("RGB")
 
 
@@ -75,7 +74,6 @@ def extract_data_from_docx(docx_file):
 
                 clean_name = name.replace(" ", "").strip()
 
-                # استبعاد الخلايا الفارغة ورأس العمود فقط
                 if clean_name and clean_name != "الاسم":
                     results.append((name, current_date))
 
@@ -84,20 +82,29 @@ def extract_data_from_docx(docx_file):
 
 def shape_arabic(text):
     text = str(text).strip()
+
     if not text:
         return ""
+
     return get_display(arabic_reshaper.reshape(text))
+
+
+def get_font(font_path, size):
+    return ImageFont.truetype(font_path, size)
 
 
 def fit_font(draw, text, font_path, max_width, size, min_size=30):
     while size > min_size:
-        font = ImageFont.truetype(font_path, size)
+        font = get_font(font_path, size)
         bbox = draw.textbbox((0, 0), text, font=font)
         w = bbox[2] - bbox[0]
+
         if w <= max_width:
             return font
+
         size -= 2
-    return ImageFont.truetype(font_path, min_size)
+
+    return get_font(font_path, min_size)
 
 
 @dataclass
@@ -126,7 +133,6 @@ def draw_on_template(
 
     W, H = img.size
 
-    # تكبير الخط حسب دقة الـ PDF
     scale = dpi / 72.0
     scaled_font_size = max(12, int(font_size * scale))
 
@@ -136,14 +142,21 @@ def draw_on_template(
     y_name = int(H * p_name.y)
     max_w = int(W * p_name.max_w)
 
-    font_name = fit_font(draw, name, font_path, max_w, scaled_font_size, min_size=max(20, int(scaled_font_size * 0.45)))
+    font_name = fit_font(
+        draw,
+        name,
+        font_path,
+        max_w,
+        scaled_font_size,
+        min_size=max(20, int(scaled_font_size * 0.45))
+    )
 
     draw.text(
         (x_name, y_name),
         name,
         font=font_name,
         fill=color,
-        anchor="rm"   # تثبيت من اليمين والمنتصف
+        anchor="rm"
     )
 
     # التاريخ
@@ -151,7 +164,7 @@ def draw_on_template(
     x_date = int(W * p_date.x)
     y_date = int(H * p_date.y)
 
-    font_date = ImageFont.truetype(font_path, max(10, int(scaled_font_size * 0.7)))
+    font_date = get_font(font_path, max(10, int(scaled_font_size * 0.7)))
 
     draw.text(
         (x_date, y_date),
@@ -176,11 +189,18 @@ def image_to_pdf_bytes(img, dpi=300):
 
 def make_zip_pdfs(images, dpi=300):
     buf = io.BytesIO()
+
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as z:
         for name, im in images:
             pdf_bytes = image_to_pdf_bytes(im, dpi=dpi)
             z.writestr(name, pdf_bytes)
+
     return buf.getvalue()
+
+
+def safe_filename(text, fallback="certificate"):
+    name = "".join(c for c in str(text) if c not in '\\/:*?"<>|').strip()
+    return name or fallback
 
 
 # ----------------------------
@@ -196,10 +216,16 @@ with col1:
     names_file = st.file_uploader("ارفع ملف الأسماء", type=["docx"])
 
 with col2:
-    font_path = st.text_input("مسار الخط", r"C:\Windows\Fonts\trado.ttf")
+    # مهم: لازم يكون ملف الخط مرفوع جنب app.py في GitHub بنفس الاسم ده
+    font_path = st.text_input("مسار الخط", "trado.ttf")
+
     font_size = st.slider("حجم الخط الأساسي", 20, 300, 80)
 
-    pdf_dpi = st.selectbox("جودة القالب PDF / دقة الإخراج", [150, 200, 300, 400, 600], index=2)
+    pdf_dpi = st.selectbox(
+        "جودة القالب PDF / دقة الإخراج",
+        [150, 200, 300, 400, 600],
+        index=2
+    )
 
     st.markdown("### مكان الاسم")
     name_x = st.slider("X الاسم", 0.0, 1.0, 0.6)
@@ -224,6 +250,7 @@ if template_file and names_file:
             st.success(f"عدد الأسماء: {len(data)}")
 
             st.markdown("### 👀 معاينة")
+
             idx = st.selectbox(
                 "اختار اسم للتجربة",
                 range(len(data)),
@@ -247,17 +274,18 @@ if template_file and names_file:
             st.image(preview_img, caption=f"{name} | {date}", use_container_width=True)
 
             preview_pdf = image_to_pdf_bytes(preview_img, dpi=pdf_dpi)
-            safe_preview_name = "".join(c for c in name if c not in '\\/:*?"<>|').strip() or "preview"
 
             st.download_button(
                 "تحميل PDF للمعاينة",
                 preview_pdf,
-                file_name=f"{safe_preview_name}.pdf",
+                file_name=f"{safe_filename(name, 'preview')}.pdf",
                 mime="application/pdf"
             )
 
             if st.button("توليد الشهادات"):
                 pdfs = []
+                progress = st.progress(0)
+
                 for i, (n, d) in enumerate(data, 1):
                     img = draw_on_template(
                         template_img,
@@ -271,11 +299,8 @@ if template_file and names_file:
                         dpi=pdf_dpi
                     )
 
-                    safe_name = "".join(c for c in n if c not in '\\/:*?"<>|').strip()
-                    if not safe_name:
-                        safe_name = f"cert_{i}"
-
-                    pdfs.append((f"{i:03d}_{safe_name}.pdf", img))
+                    pdfs.append((f"{i:03d}_{safe_filename(n, f'cert_{i}')}.pdf", img))
+                    progress.progress(i / len(data))
 
                 zip_data = make_zip_pdfs(pdfs, dpi=pdf_dpi)
 
