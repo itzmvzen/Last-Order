@@ -1,0 +1,6 @@
+streamlit
+python-docx
+Pillow
+PyMuPDF
+arabic-reshaper
+python-bidi
