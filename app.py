@@ -14,7 +14,7 @@ from bidi.algorithm import get_display
 # ----------------------------
 # Helpers
 # ----------------------------
-def render_first_page(pdf_bytes: bytes, dpi=300):
+def render_first_page(pdf_bytes: bytes, dpi=200):
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     page = doc[0]
 
@@ -25,7 +25,7 @@ def render_first_page(pdf_bytes: bytes, dpi=300):
     return Image.open(io.BytesIO(pix.tobytes("png"))).convert("RGB")
 
 
-def load_template(file, dpi=300):
+def load_template(file, dpi=200):
     data = file.read()
 
     if file.name.lower().endswith(".pdf"):
@@ -126,7 +126,7 @@ def draw_on_template(
     p_name,
     p_date,
     color,
-    dpi=300
+    dpi=200
 ):
     img = img.copy()
     draw = ImageDraw.Draw(img)
@@ -180,21 +180,10 @@ def draw_on_template(
 # ----------------------------
 # تحويل الصورة إلى PDF
 # ----------------------------
-def image_to_pdf_bytes(img, dpi=300):
+def image_to_pdf_bytes(img, dpi=200):
     buf = io.BytesIO()
     rgb_img = img.convert("RGB")
     rgb_img.save(buf, format="PDF", resolution=dpi)
-    return buf.getvalue()
-
-
-def make_zip_pdfs(images, dpi=300):
-    buf = io.BytesIO()
-
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as z:
-        for name, im in images:
-            pdf_bytes = image_to_pdf_bytes(im, dpi=dpi)
-            z.writestr(name, pdf_bytes)
-
     return buf.getvalue()
 
 
@@ -216,15 +205,14 @@ with col1:
     names_file = st.file_uploader("ارفع ملف الأسماء", type=["docx"])
 
 with col2:
-    # مهم: لازم يكون ملف الخط مرفوع جنب app.py في GitHub بنفس الاسم ده
     font_path = st.text_input("مسار الخط", "trado.ttf")
 
     font_size = st.slider("حجم الخط الأساسي", 20, 300, 80)
 
     pdf_dpi = st.selectbox(
         "جودة القالب PDF / دقة الإخراج",
-        [150, 200, 300, 400, 600],
-        index=2
+        [150, 200, 300],
+        index=1
     )
 
     st.markdown("### مكان الاسم")
@@ -271,7 +259,7 @@ if template_file and names_file:
                 dpi=pdf_dpi
             )
 
-            st.image(preview_img, caption=f"{name} | {date}", use_container_width=True)
+            st.image(preview_img, caption=f"{name} | {date}", width="stretch")
 
             preview_pdf = image_to_pdf_bytes(preview_img, dpi=pdf_dpi)
 
@@ -283,30 +271,36 @@ if template_file and names_file:
             )
 
             if st.button("توليد الشهادات"):
-                pdfs = []
+                zip_buffer = io.BytesIO()
                 progress = st.progress(0)
 
-                for i, (n, d) in enumerate(data, 1):
-                    img = draw_on_template(
-                        template_img,
-                        n,
-                        d,
-                        font_path,
-                        font_size,
-                        p_name,
-                        p_date,
-                        color,
-                        dpi=pdf_dpi
-                    )
+                with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_STORED) as z:
+                    for i, (n, d) in enumerate(data, 1):
+                        img = draw_on_template(
+                            template_img,
+                            n,
+                            d,
+                            font_path,
+                            font_size,
+                            p_name,
+                            p_date,
+                            color,
+                            dpi=pdf_dpi
+                        )
 
-                    pdfs.append((f"{i:03d}_{safe_filename(n, f'cert_{i}')}.pdf", img))
-                    progress.progress(i / len(data))
+                        pdf_bytes = image_to_pdf_bytes(img, dpi=pdf_dpi)
 
-                zip_data = make_zip_pdfs(pdfs, dpi=pdf_dpi)
+                        safe_name = safe_filename(n, f"cert_{i}")
+                        z.writestr(f"{i:03d}_{safe_name}.pdf", pdf_bytes)
+
+                        del img
+                        del pdf_bytes
+
+                        progress.progress(i / len(data))
 
                 st.download_button(
                     "تحميل كل الشهادات PDF داخل ZIP",
-                    zip_data,
+                    zip_buffer.getvalue(),
                     "certificates_pdf.zip",
                     mime="application/zip"
                 )
