@@ -1,4 +1,5 @@
 import io
+import zipfile
 from dataclasses import dataclass
 
 import streamlit as st
@@ -177,34 +178,25 @@ def draw_on_template(
 
 
 # ----------------------------
-# PDF واحد فيه كل الشهادات
+# تحويل الصورة إلى PDF / JPEG
 # ----------------------------
-def make_single_pdf(images, dpi=200):
-    buf = io.BytesIO()
-
-    if not images:
-        return b""
-
-    pdf_images = [img.convert("RGB") for img in images]
-
-    first_image = pdf_images[0]
-    other_images = pdf_images[1:]
-
-    first_image.save(
-        buf,
-        format="PDF",
-        save_all=True,
-        append_images=other_images,
-        resolution=dpi
-    )
-
-    return buf.getvalue()
-
-
 def image_to_pdf_bytes(img, dpi=200):
     buf = io.BytesIO()
     rgb_img = img.convert("RGB")
     rgb_img.save(buf, format="PDF", resolution=dpi)
+    return buf.getvalue()
+
+
+def image_to_jpeg_bytes(img, quality=95):
+    buf = io.BytesIO()
+    rgb_img = img.convert("RGB")
+    rgb_img.save(
+        buf,
+        format="JPEG",
+        quality=quality,
+        optimize=True,
+        progressive=True
+    )
     return buf.getvalue()
 
 
@@ -217,7 +209,7 @@ def safe_filename(text, fallback="certificate"):
 # UI
 # ----------------------------
 st.set_page_config(layout="wide")
-st.title("مولد الشهادات PDF 🔥")
+st.title("مولد الشهادات ZIP 🔥")
 
 col1, col2 = st.columns(2)
 
@@ -231,10 +223,20 @@ with col2:
     font_size = st.slider("حجم الخط الأساسي", 20, 300, 80)
 
     pdf_dpi = st.selectbox(
-        "جودة القالب PDF / دقة الإخراج",
+        "جودة القالب / دقة الإخراج",
         [150, 200, 300],
         index=1
     )
+
+    output_type = st.radio(
+        "نوع الملفات داخل ZIP",
+        ["PDF", "JPEG"],
+        index=0
+    )
+
+    jpeg_quality = 95
+    if output_type == "JPEG":
+        jpeg_quality = st.slider("جودة JPEG", 70, 100, 95)
 
     st.markdown("### مكان الاسم")
     name_x = st.slider("X الاسم", 0.0, 1.0, 0.6)
@@ -247,8 +249,10 @@ with col2:
 
     color = st.color_picker("اللون", "#000000")
 
+
 p_name = Placement(name_x, name_y, name_w)
 p_date = Placement(date_x, date_y, 0.4)
+
 
 if template_file and names_file:
     try:
@@ -282,42 +286,65 @@ if template_file and names_file:
 
             st.image(preview_img, caption=f"{name} | {date}", width="stretch")
 
-            preview_pdf = image_to_pdf_bytes(preview_img, dpi=pdf_dpi)
+            if output_type == "PDF":
+                preview_file = image_to_pdf_bytes(preview_img, dpi=pdf_dpi)
+                preview_name = f"{safe_filename(name, 'preview')}.pdf"
+                preview_mime = "application/pdf"
+                preview_label = "تحميل PDF للمعاينة"
+            else:
+                preview_file = image_to_jpeg_bytes(preview_img, quality=jpeg_quality)
+                preview_name = f"{safe_filename(name, 'preview')}.jpg"
+                preview_mime = "image/jpeg"
+                preview_label = "تحميل JPEG للمعاينة"
 
             st.download_button(
-                "تحميل PDF للمعاينة",
-                preview_pdf,
-                file_name=f"{safe_filename(name, 'preview')}.pdf",
-                mime="application/pdf"
+                preview_label,
+                preview_file,
+                file_name=preview_name,
+                mime=preview_mime
             )
 
-            if st.button("توليد كل الشهادات في PDF واحد"):
-                images = []
+            if st.button("توليد الشهادات داخل ZIP"):
+                zip_buffer = io.BytesIO()
                 progress = st.progress(0)
 
-                for i, (n, d) in enumerate(data, 1):
-                    img = draw_on_template(
-                        template_img,
-                        n,
-                        d,
-                        font_path,
-                        font_size,
-                        p_name,
-                        p_date,
-                        color,
-                        dpi=pdf_dpi
-                    )
+                with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_STORED) as z:
+                    for i, (n, d) in enumerate(data, 1):
+                        img = draw_on_template(
+                            template_img,
+                            n,
+                            d,
+                            font_path,
+                            font_size,
+                            p_name,
+                            p_date,
+                            color,
+                            dpi=pdf_dpi
+                        )
 
-                    images.append(img)
-                    progress.progress(i / len(data))
+                        safe_name = safe_filename(n, f"cert_{i}")
 
-                all_pdf = make_single_pdf(images, dpi=pdf_dpi)
+                        if output_type == "PDF":
+                            file_bytes = image_to_pdf_bytes(img, dpi=pdf_dpi)
+                            filename = f"{i:03d}_{safe_name}.pdf"
+                        else:
+                            file_bytes = image_to_jpeg_bytes(img, quality=jpeg_quality)
+                            filename = f"{i:03d}_{safe_name}.jpg"
+
+                        z.writestr(filename, file_bytes)
+
+                        del img
+                        del file_bytes
+
+                        progress.progress(i / len(data))
+
+                zip_name = "certificates_pdf.zip" if output_type == "PDF" else "certificates_jpeg.zip"
 
                 st.download_button(
-                    "تحميل ملف PDF واحد لكل الشهادات",
-                    all_pdf,
-                    "all_certificates.pdf",
-                    mime="application/pdf"
+                    f"تحميل كل الشهادات {output_type} داخل ZIP",
+                    zip_buffer.getvalue(),
+                    zip_name,
+                    mime="application/zip"
                 )
 
         else:
