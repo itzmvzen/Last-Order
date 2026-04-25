@@ -1,5 +1,4 @@
 import io
-import zipfile
 from dataclasses import dataclass
 
 import streamlit as st
@@ -178,8 +177,30 @@ def draw_on_template(
 
 
 # ----------------------------
-# تحويل الصورة إلى PDF
+# PDF واحد فيه كل الشهادات
 # ----------------------------
+def make_single_pdf(images, dpi=200):
+    buf = io.BytesIO()
+
+    if not images:
+        return b""
+
+    pdf_images = [img.convert("RGB") for img in images]
+
+    first_image = pdf_images[0]
+    other_images = pdf_images[1:]
+
+    first_image.save(
+        buf,
+        format="PDF",
+        save_all=True,
+        append_images=other_images,
+        resolution=dpi
+    )
+
+    return buf.getvalue()
+
+
 def image_to_pdf_bytes(img, dpi=200):
     buf = io.BytesIO()
     rgb_img = img.convert("RGB")
@@ -270,39 +291,33 @@ if template_file and names_file:
                 mime="application/pdf"
             )
 
-            if st.button("توليد الشهادات"):
-                zip_buffer = io.BytesIO()
+            if st.button("توليد كل الشهادات في PDF واحد"):
+                images = []
                 progress = st.progress(0)
 
-                with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_STORED) as z:
-                    for i, (n, d) in enumerate(data, 1):
-                        img = draw_on_template(
-                            template_img,
-                            n,
-                            d,
-                            font_path,
-                            font_size,
-                            p_name,
-                            p_date,
-                            color,
-                            dpi=pdf_dpi
-                        )
+                for i, (n, d) in enumerate(data, 1):
+                    img = draw_on_template(
+                        template_img,
+                        n,
+                        d,
+                        font_path,
+                        font_size,
+                        p_name,
+                        p_date,
+                        color,
+                        dpi=pdf_dpi
+                    )
 
-                        pdf_bytes = image_to_pdf_bytes(img, dpi=pdf_dpi)
+                    images.append(img)
+                    progress.progress(i / len(data))
 
-                        safe_name = safe_filename(n, f"cert_{i}")
-                        z.writestr(f"{i:03d}_{safe_name}.pdf", pdf_bytes)
-
-                        del img
-                        del pdf_bytes
-
-                        progress.progress(i / len(data))
+                all_pdf = make_single_pdf(images, dpi=pdf_dpi)
 
                 st.download_button(
-                    "تحميل كل الشهادات PDF داخل ZIP",
-                    zip_buffer.getvalue(),
-                    "certificates_pdf.zip",
-                    mime="application/zip"
+                    "تحميل ملف PDF واحد لكل الشهادات",
+                    all_pdf,
+                    "all_certificates.pdf",
+                    mime="application/pdf"
                 )
 
         else:
