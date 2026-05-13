@@ -71,7 +71,7 @@ def normalize_date(date_text):
         month = parts[1].zfill(2)
         year = parts[2]
 
-        return f"{year}/{month}/{day}"
+        return f"{day}/{month}/{year}"
 
     return text
 
