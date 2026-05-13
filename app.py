@@ -53,6 +53,11 @@ def normalize_date(date_text):
     if not dates:
         return ""
 
+    def to_arabic_numbers(value):
+        english = "0123456789"
+        arabic = "٠١٢٣٤٥٦٧٨٩"
+        return value.translate(str.maketrans(english, arabic))
+
     def fix_one_date(d):
         parts = [p.strip() for p in d.split("/")]
 
@@ -63,13 +68,13 @@ def normalize_date(date_text):
         month = parts[1]
         year = parts[2]
 
-        return f"{year}/{month}/{day}"
+        # سنة / شهر / يوم
+        return to_arabic_numbers(f"{year}/{month}/{day}")
 
     if len(dates) >= 2:
         start_date = fix_one_date(dates[0])
         end_date = fix_one_date(dates[1])
-
-        return f"{end_date}        {start_date}"
+        return f"{start_date}        {end_date}"
 
     return fix_one_date(dates[0])
 
@@ -84,7 +89,6 @@ def extract_data_from_docx(docx_file):
     results = []
 
     for table in doc.tables:
-
         if len(table.rows) < 2:
             continue
 
@@ -94,7 +98,6 @@ def extract_data_from_docx(docx_file):
         date_col = None
 
         for i, h in enumerate(headers):
-
             h_clean = h.replace(" ", "")
 
             if h_clean == "الاسم":
@@ -104,15 +107,12 @@ def extract_data_from_docx(docx_file):
                 date_col = i
 
         if name_col is not None:
-
             current_date = ""
 
             for r in table.rows[1:]:
-
                 name = r.cells[name_col].text.strip() if name_col < len(r.cells) else ""
 
                 date = ""
-
                 if date_col is not None and date_col < len(r.cells):
                     date = r.cells[date_col].text.strip()
 
@@ -131,14 +131,12 @@ def extract_data_from_docx(docx_file):
 # عربي
 # ----------------------------
 def shape_arabic(text):
-
     text = str(text).strip()
 
     if not text:
         return ""
 
     reshaped = arabic_reshaper.reshape(text)
-
     return get_display(reshaped)
 
 
@@ -147,13 +145,9 @@ def get_font(font_path, size):
 
 
 def fit_font(draw, text, font_path, max_width, size, min_size=30):
-
     while size > min_size:
-
         font = get_font(font_path, size)
-
         bbox = draw.textbbox((0, 0), text, font=font)
-
         w = bbox[2] - bbox[0]
 
         if w <= max_width:
@@ -180,13 +174,13 @@ def draw_on_template(
     date,
     font_path,
     font_size,
+    date_font_size,
     p_name,
     p_date,
     color,
     dpi=200
 ):
     img = img.copy()
-
     draw = ImageDraw.Draw(img)
 
     W, H = img.size
@@ -194,15 +188,13 @@ def draw_on_template(
     scale = dpi / 72.0
 
     scaled_font_size = max(12, int(font_size * scale))
+    scaled_date_font_size = max(10, int(date_font_size * scale))
 
-    # ----------------------------
     # الاسم
-    # ----------------------------
     name = shape_arabic(name)
 
     x_name = int(W * p_name.x)
     y_name = int(H * p_name.y)
-
     max_w = int(W * p_name.max_w)
 
     font_name = fit_font(
@@ -222,18 +214,13 @@ def draw_on_template(
         anchor="rm"
     )
 
-    # ----------------------------
     # التاريخ
-    # ----------------------------
     date = str(date)
 
     x_date = int(W * p_date.x)
     y_date = int(H * p_date.y)
 
-    font_date = get_font(
-        font_path,
-        max(10, int(scaled_font_size * 0.7))
-    )
+    font_date = get_font(font_path, scaled_date_font_size)
 
     draw.text(
         (x_date, y_date),
@@ -247,28 +234,18 @@ def draw_on_template(
 
 
 # ----------------------------
-# PDF
+# PDF / JPEG
 # ----------------------------
 def image_to_pdf_bytes(img, dpi=200):
-
     buf = io.BytesIO()
-
     rgb_img = img.convert("RGB")
-
     rgb_img.save(buf, format="PDF", resolution=dpi)
-
     return buf.getvalue()
 
 
-# ----------------------------
-# JPEG
-# ----------------------------
 def image_to_jpeg_bytes(img, quality=95):
-
     buf = io.BytesIO()
-
     rgb_img = img.convert("RGB")
-
     rgb_img.save(
         buf,
         format="JPEG",
@@ -276,12 +253,10 @@ def image_to_jpeg_bytes(img, quality=95):
         optimize=True,
         progressive=True
     )
-
     return buf.getvalue()
 
 
 def safe_filename(text, fallback="certificate"):
-
     name = "".join(
         c for c in str(text)
         if c not in '\\/:*?"<>|'
@@ -294,13 +269,11 @@ def safe_filename(text, fallback="certificate"):
 # UI
 # ----------------------------
 st.set_page_config(layout="wide")
-
 st.title("مولد الشهادات ZIP 🔥")
 
 col1, col2 = st.columns(2)
 
 with col1:
-
     template_file = st.file_uploader(
         "ارفع الشهادة",
         type=["pdf", "png", "jpg", "jpeg"]
@@ -312,17 +285,23 @@ with col1:
     )
 
 with col2:
-
     font_path = st.text_input(
         "اسم ملف الخط",
         "PT Bold Heading.ttf"
     )
 
     font_size = st.slider(
-        "حجم الخط الأساسي",
+        "حجم خط الاسم",
         20,
         300,
         80
+    )
+
+    date_font_size = st.slider(
+        "حجم خط التاريخ",
+        10,
+        200,
+        50
     )
 
     pdf_dpi = st.selectbox(
@@ -340,7 +319,6 @@ with col2:
     jpeg_quality = 95
 
     if output_type == "JPEG":
-
         jpeg_quality = st.slider(
             "جودة JPEG",
             70,
@@ -394,7 +372,6 @@ with col2:
 
 
 p_name = Placement(name_x, name_y, name_w)
-
 p_date = Placement(date_x, date_y, 0.4)
 
 
@@ -402,9 +379,7 @@ p_date = Placement(date_x, date_y, 0.4)
 # التشغيل
 # ----------------------------
 if template_file and names_file:
-
     try:
-
         template_img = load_template(
             template_file,
             dpi=pdf_dpi
@@ -413,7 +388,6 @@ if template_file and names_file:
         data = extract_data_from_docx(names_file)
 
         if data:
-
             st.success(f"عدد الأسماء: {len(data)}")
 
             st.markdown("### 👀 معاينة")
@@ -432,6 +406,7 @@ if template_file and names_file:
                 date,
                 font_path,
                 font_size,
+                date_font_size,
                 p_name,
                 p_date,
                 color,
@@ -444,31 +419,24 @@ if template_file and names_file:
                 width="stretch"
             )
 
-            # معاينة
             if output_type == "PDF":
-
                 preview_file = image_to_pdf_bytes(
                     preview_img,
                     dpi=pdf_dpi
                 )
 
                 preview_name = f"{safe_filename(name, 'preview')}.pdf"
-
                 preview_mime = "application/pdf"
-
                 preview_label = "تحميل PDF للمعاينة"
 
             else:
-
                 preview_file = image_to_jpeg_bytes(
                     preview_img,
                     quality=jpeg_quality
                 )
 
                 preview_name = f"{safe_filename(name, 'preview')}.jpg"
-
                 preview_mime = "image/jpeg"
-
                 preview_label = "تحميل JPEG للمعاينة"
 
             st.download_button(
@@ -478,11 +446,8 @@ if template_file and names_file:
                 mime=preview_mime
             )
 
-            # توليد
             if st.button("توليد الشهادات داخل ZIP"):
-
                 zip_buffer = io.BytesIO()
-
                 progress = st.progress(0)
 
                 with zipfile.ZipFile(
@@ -490,28 +455,23 @@ if template_file and names_file:
                     "w",
                     compression=zipfile.ZIP_STORED
                 ) as z:
-
                     for i, (n, d) in enumerate(data, 1):
-
                         img = draw_on_template(
                             template_img,
                             n,
                             d,
                             font_path,
                             font_size,
+                            date_font_size,
                             p_name,
                             p_date,
                             color,
                             dpi=pdf_dpi
                         )
 
-                        safe_name = safe_filename(
-                            n,
-                            f"cert_{i}"
-                        )
+                        safe_name = safe_filename(n, f"cert_{i}")
 
                         if output_type == "PDF":
-
                             file_bytes = image_to_pdf_bytes(
                                 img,
                                 dpi=pdf_dpi
@@ -520,7 +480,6 @@ if template_file and names_file:
                             filename = f"{i:03d}_{safe_name}.pdf"
 
                         else:
-
                             file_bytes = image_to_jpeg_bytes(
                                 img,
                                 quality=jpeg_quality
@@ -529,6 +488,9 @@ if template_file and names_file:
                             filename = f"{i:03d}_{safe_name}.jpg"
 
                         z.writestr(filename, file_bytes)
+
+                        del img
+                        del file_bytes
 
                         progress.progress(i / len(data))
 
@@ -546,13 +508,10 @@ if template_file and names_file:
                 )
 
         else:
-
             st.warning("لم يتم العثور على أسماء داخل ملف الـ Word")
 
     except Exception as e:
-
         st.error(f"حصل خطأ: {e}")
 
 else:
-
     st.info("ارفع الملفات الأول")
