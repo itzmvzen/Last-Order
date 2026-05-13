@@ -35,6 +35,48 @@ def load_template(file, dpi=200):
 
 
 # ----------------------------
+# تنسيق التاريخ
+# ----------------------------
+def normalize_date(date_text):
+    """
+    يحول التاريخ إلى:
+    2024-05-18
+    """
+
+    if not date_text:
+        return ""
+
+    text = str(date_text).strip()
+
+    # حذف الكلمات
+    text = text.replace("حتى", "")
+    text = text.replace("حتي", "")
+    text = text.replace("من", "")
+    text = text.replace("إلى", "")
+    text = text.replace("الى", "")
+
+    text = text.strip()
+
+    # توحيد الفواصل
+    text = text.replace("\\", "/")
+    text = text.replace("-", "/")
+    text = text.replace(".", "/")
+
+    parts = [p.strip() for p in text.split("/") if p.strip()]
+
+    if len(parts) == 3:
+
+        # لو التاريخ مكتوب يوم/شهر/سنة
+        day = parts[0].zfill(2)
+        month = parts[1].zfill(2)
+        year = parts[2]
+
+        return f"{year}/{month}/{day}"
+
+    return text
+
+
+# ----------------------------
 # استخراج الاسم + التاريخ
 # ----------------------------
 def extract_data_from_docx(docx_file):
@@ -44,6 +86,7 @@ def extract_data_from_docx(docx_file):
     results = []
 
     for table in doc.tables:
+
         if len(table.rows) < 2:
             continue
 
@@ -53,24 +96,30 @@ def extract_data_from_docx(docx_file):
         date_col = None
 
         for i, h in enumerate(headers):
+
             h_clean = h.replace(" ", "")
+
             if h_clean == "الاسم":
                 name_col = i
+
             if "تاريخ" in h_clean:
                 date_col = i
 
         if name_col is not None:
+
             current_date = ""
 
             for r in table.rows[1:]:
+
                 name = r.cells[name_col].text.strip() if name_col < len(r.cells) else ""
+
                 date = ""
 
                 if date_col is not None and date_col < len(r.cells):
                     date = r.cells[date_col].text.strip()
 
                 if date:
-                    current_date = date
+                    current_date = normalize_date(date)
 
                 clean_name = name.replace(" ", "").strip()
 
@@ -80,13 +129,19 @@ def extract_data_from_docx(docx_file):
     return results
 
 
+# ----------------------------
+# عربي
+# ----------------------------
 def shape_arabic(text):
+
     text = str(text).strip()
 
     if not text:
         return ""
 
-    return get_display(arabic_reshaper.reshape(text))
+    reshaped = arabic_reshaper.reshape(text)
+
+    return get_display(reshaped)
 
 
 def get_font(font_path, size):
@@ -94,9 +149,13 @@ def get_font(font_path, size):
 
 
 def fit_font(draw, text, font_path, max_width, size, min_size=30):
+
     while size > min_size:
+
         font = get_font(font_path, size)
+
         bbox = draw.textbbox((0, 0), text, font=font)
+
         w = bbox[2] - bbox[0]
 
         if w <= max_width:
@@ -129,17 +188,23 @@ def draw_on_template(
     dpi=200
 ):
     img = img.copy()
+
     draw = ImageDraw.Draw(img)
 
     W, H = img.size
 
     scale = dpi / 72.0
+
     scaled_font_size = max(12, int(font_size * scale))
 
+    # ----------------------------
     # الاسم
+    # ----------------------------
     name = shape_arabic(name)
+
     x_name = int(W * p_name.x)
     y_name = int(H * p_name.y)
+
     max_w = int(W * p_name.max_w)
 
     font_name = fit_font(
@@ -159,12 +224,18 @@ def draw_on_template(
         anchor="rm"
     )
 
+    # ----------------------------
     # التاريخ
-    date = shape_arabic(date)
+    # ----------------------------
+    date = str(date)
+
     x_date = int(W * p_date.x)
     y_date = int(H * p_date.y)
 
-    font_date = get_font(font_path, max(10, int(scaled_font_size * 0.7)))
+    font_date = get_font(
+        font_path,
+        max(10, int(scaled_font_size * 0.7))
+    )
 
     draw.text(
         (x_date, y_date),
@@ -178,18 +249,28 @@ def draw_on_template(
 
 
 # ----------------------------
-# تحويل الصورة إلى PDF / JPEG
+# PDF
 # ----------------------------
 def image_to_pdf_bytes(img, dpi=200):
+
     buf = io.BytesIO()
+
     rgb_img = img.convert("RGB")
+
     rgb_img.save(buf, format="PDF", resolution=dpi)
+
     return buf.getvalue()
 
 
+# ----------------------------
+# JPEG
+# ----------------------------
 def image_to_jpeg_bytes(img, quality=95):
+
     buf = io.BytesIO()
+
     rgb_img = img.convert("RGB")
+
     rgb_img.save(
         buf,
         format="JPEG",
@@ -197,11 +278,17 @@ def image_to_jpeg_bytes(img, quality=95):
         optimize=True,
         progressive=True
     )
+
     return buf.getvalue()
 
 
 def safe_filename(text, fallback="certificate"):
-    name = "".join(c for c in str(text) if c not in '\\/:*?"<>|').strip()
+
+    name = "".join(
+        c for c in str(text)
+        if c not in '\\/:*?"<>|'
+    ).strip()
+
     return name or fallback
 
 
@@ -209,18 +296,36 @@ def safe_filename(text, fallback="certificate"):
 # UI
 # ----------------------------
 st.set_page_config(layout="wide")
+
 st.title("مولد الشهادات ZIP 🔥")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    template_file = st.file_uploader("ارفع الشهادة", type=["pdf", "png", "jpg", "jpeg"])
-    names_file = st.file_uploader("ارفع ملف الأسماء", type=["docx"])
+
+    template_file = st.file_uploader(
+        "ارفع الشهادة",
+        type=["pdf", "png", "jpg", "jpeg"]
+    )
+
+    names_file = st.file_uploader(
+        "ارفع ملف الأسماء",
+        type=["docx"]
+    )
 
 with col2:
-    font_path = st.text_input("مسار الخط", "trado.ttf")
 
-    font_size = st.slider("حجم الخط الأساسي", 20, 300, 80)
+    font_path = st.text_input(
+        "اسم ملف الخط",
+        "PT Bold Heading.ttf"
+    )
+
+    font_size = st.slider(
+        "حجم الخط الأساسي",
+        20,
+        300,
+        80
+    )
 
     pdf_dpi = st.selectbox(
         "جودة القالب / دقة الإخراج",
@@ -235,31 +340,82 @@ with col2:
     )
 
     jpeg_quality = 95
+
     if output_type == "JPEG":
-        jpeg_quality = st.slider("جودة JPEG", 70, 100, 95)
+
+        jpeg_quality = st.slider(
+            "جودة JPEG",
+            70,
+            100,
+            95
+        )
 
     st.markdown("### مكان الاسم")
-    name_x = st.slider("X الاسم", 0.0, 1.0, 0.6)
-    name_y = st.slider("Y الاسم", 0.0, 1.0, 0.25)
-    name_w = st.slider("عرض الاسم", 0.1, 0.9, 0.5)
+
+    name_x = st.slider(
+        "X الاسم",
+        0.0,
+        1.0,
+        0.6
+    )
+
+    name_y = st.slider(
+        "Y الاسم",
+        0.0,
+        1.0,
+        0.25
+    )
+
+    name_w = st.slider(
+        "عرض الاسم",
+        0.1,
+        0.9,
+        0.5
+    )
 
     st.markdown("### مكان التاريخ")
-    date_x = st.slider("X التاريخ", 0.0, 1.0, 0.6)
-    date_y = st.slider("Y التاريخ", 0.0, 1.0, 0.3)
 
-    color = st.color_picker("اللون", "#000000")
+    date_x = st.slider(
+        "X التاريخ",
+        0.0,
+        1.0,
+        0.6
+    )
+
+    date_y = st.slider(
+        "Y التاريخ",
+        0.0,
+        1.0,
+        0.3
+    )
+
+    color = st.color_picker(
+        "اللون",
+        "#000000"
+    )
 
 
 p_name = Placement(name_x, name_y, name_w)
+
 p_date = Placement(date_x, date_y, 0.4)
 
 
+# ----------------------------
+# التشغيل
+# ----------------------------
 if template_file and names_file:
+
     try:
-        template_img = load_template(template_file, dpi=pdf_dpi)
+
+        template_img = load_template(
+            template_file,
+            dpi=pdf_dpi
+        )
+
         data = extract_data_from_docx(names_file)
 
         if data:
+
             st.success(f"عدد الأسماء: {len(data)}")
 
             st.markdown("### 👀 معاينة")
@@ -284,17 +440,37 @@ if template_file and names_file:
                 dpi=pdf_dpi
             )
 
-            st.image(preview_img, caption=f"{name} | {date}", width="stretch")
+            st.image(
+                preview_img,
+                caption=f"{name} | {date}",
+                width="stretch"
+            )
 
+            # معاينة
             if output_type == "PDF":
-                preview_file = image_to_pdf_bytes(preview_img, dpi=pdf_dpi)
+
+                preview_file = image_to_pdf_bytes(
+                    preview_img,
+                    dpi=pdf_dpi
+                )
+
                 preview_name = f"{safe_filename(name, 'preview')}.pdf"
+
                 preview_mime = "application/pdf"
+
                 preview_label = "تحميل PDF للمعاينة"
+
             else:
-                preview_file = image_to_jpeg_bytes(preview_img, quality=jpeg_quality)
+
+                preview_file = image_to_jpeg_bytes(
+                    preview_img,
+                    quality=jpeg_quality
+                )
+
                 preview_name = f"{safe_filename(name, 'preview')}.jpg"
+
                 preview_mime = "image/jpeg"
+
                 preview_label = "تحميل JPEG للمعاينة"
 
             st.download_button(
@@ -304,12 +480,21 @@ if template_file and names_file:
                 mime=preview_mime
             )
 
+            # توليد
             if st.button("توليد الشهادات داخل ZIP"):
+
                 zip_buffer = io.BytesIO()
+
                 progress = st.progress(0)
 
-                with zipfile.ZipFile(zip_buffer, "w", compression=zipfile.ZIP_STORED) as z:
+                with zipfile.ZipFile(
+                    zip_buffer,
+                    "w",
+                    compression=zipfile.ZIP_STORED
+                ) as z:
+
                     for i, (n, d) in enumerate(data, 1):
+
                         img = draw_on_template(
                             template_img,
                             n,
@@ -322,23 +507,38 @@ if template_file and names_file:
                             dpi=pdf_dpi
                         )
 
-                        safe_name = safe_filename(n, f"cert_{i}")
+                        safe_name = safe_filename(
+                            n,
+                            f"cert_{i}"
+                        )
 
                         if output_type == "PDF":
-                            file_bytes = image_to_pdf_bytes(img, dpi=pdf_dpi)
+
+                            file_bytes = image_to_pdf_bytes(
+                                img,
+                                dpi=pdf_dpi
+                            )
+
                             filename = f"{i:03d}_{safe_name}.pdf"
+
                         else:
-                            file_bytes = image_to_jpeg_bytes(img, quality=jpeg_quality)
+
+                            file_bytes = image_to_jpeg_bytes(
+                                img,
+                                quality=jpeg_quality
+                            )
+
                             filename = f"{i:03d}_{safe_name}.jpg"
 
                         z.writestr(filename, file_bytes)
 
-                        del img
-                        del file_bytes
-
                         progress.progress(i / len(data))
 
-                zip_name = "certificates_pdf.zip" if output_type == "PDF" else "certificates_jpeg.zip"
+                zip_name = (
+                    "certificates_pdf.zip"
+                    if output_type == "PDF"
+                    else "certificates_jpeg.zip"
+                )
 
                 st.download_button(
                     f"تحميل كل الشهادات {output_type} داخل ZIP",
@@ -348,10 +548,13 @@ if template_file and names_file:
                 )
 
         else:
+
             st.warning("لم يتم العثور على أسماء داخل ملف الـ Word")
 
     except Exception as e:
+
         st.error(f"حصل خطأ: {e}")
 
 else:
+
     st.info("ارفع الملفات الأول")
