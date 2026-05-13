@@ -38,42 +38,39 @@ def load_template(file, dpi=200):
 # تنسيق التاريخ
 # ----------------------------
 def normalize_date(date_text):
-    """
-    يحول التاريخ إلى:
-    2024-05-18
-    """
-
     if not date_text:
         return ""
 
     text = str(date_text).strip()
 
-    # حذف الكلمات
-    text = text.replace("حتى", "")
-    text = text.replace("حتي", "")
-    text = text.replace("من", "")
-    text = text.replace("إلى", "")
-    text = text.replace("الى", "")
-
-    text = text.strip()
-
-    # توحيد الفواصل
     text = text.replace("\\", "/")
     text = text.replace("-", "/")
     text = text.replace(".", "/")
 
-    parts = [p.strip() for p in text.split("/") if p.strip()]
+    dates = re.findall(r"\d{1,2}\s*/\s*\d{1,2}\s*/\s*\d{4}", text)
 
-    if len(parts) == 3:
+    if not dates:
+        return ""
 
-        # لو التاريخ مكتوب يوم/شهر/سنة
-        day = parts[0].zfill(2)
-        month = parts[1].zfill(2)
+    def fix_one_date(d):
+        parts = [p.strip() for p in d.split("/")]
+
+        if len(parts) != 3:
+            return d
+
+        day = parts[0]
+        month = parts[1]
         year = parts[2]
 
         return f"{year}/{month}/{day}"
 
-    return text
+    if len(dates) >= 2:
+        start_date = fix_one_date(dates[0])
+        end_date = fix_one_date(dates[1])
+
+        return f"{start_date}        {end_date}"
+
+    return fix_one_date(dates[0])
 
 
 # ----------------------------
