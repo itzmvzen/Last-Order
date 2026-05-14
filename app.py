@@ -74,7 +74,7 @@ def normalize_date(date_text):
     if len(dates) >= 2:
         start_date = fix_one_date(dates[0])
         end_date = fix_one_date(dates[1])
-        return f"{start_date}            {end_date}"
+        return f"{end_date}            {start_date}"
 
     return fix_one_date(dates[0])
 
